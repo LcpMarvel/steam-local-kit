@@ -1,0 +1,17 @@
+[package]
+name = "steam-local-kit"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+description = "Product-neutral Rust primitives for discovering, inspecting, and safely editing local Steam configuration"
+repository = "https://github.com/LcpMarvel/steam-local-kit"
+
+[dependencies]
+dirs = "6.0"
+fs2 = "0.4"
+keyvalues-parser = "0.2.4"
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
