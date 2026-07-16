@@ -1,6 +1,6 @@
 # RFC：`steam-local-kit` 公共 API
 
-- 状态：已实施（Phase A–D 完成，Phase E 发布准备待办）
+- 状态：已实施（Phase A–E 完成，crates.io 发布另行评估）
 - 日期：2026-07-16
 - 目标版本：`0.1.0`
 
@@ -8,7 +8,7 @@
 
 将 Steam 本地发现、用户解析、VDF 定点编辑和安全文件事务抽成无 Aegis、Dota、Tauri、Tokio 依赖的 Rust library crate：`steam-local-kit`。
 
-首阶段将 crate 放在本仓库 `crates/steam-local-kit`，以便行为基线、调用方迁移和锁文件变更可以原子验证。公共 API 稳定且至少有第二个消费者后，可把源码与 API 原样拆到 `/Volumes/lcp/hovel/steam-local-kit/` 独立仓库（仅把 workspace 继承项改为独立 manifest 值）；消费者改用 Git tag，Rust 模块和类型无需变化。
+首阶段曾将 crate 放在 Aegis 仓库 `crates/steam-local-kit`，以便行为基线、调用方迁移和锁文件变更可以原子验证。现已拆到独立仓库 [`LcpMarvel/steam-local-kit`](https://github.com/LcpMarvel/steam-local-kit)，本地 checkout 位于 `/Volumes/lcp/hovel/steam-local-kit/`；Aegis 通过公开 HTTPS Git URL 和固定 commit revision 引入，Rust 模块和类型保持不变。
 
 ## 2. 目标
 
@@ -314,30 +314,29 @@ pub enum SteamError {
 - 搬迁备份、源指纹、原子写入和恢复。
 - Aegis 保留进程门禁、用户确认、文案和 backup namespace。
 
-### Phase E：独立发布（待办）
+### Phase E：独立发布（已完成）
 
-- Windows/macOS/Linux CI。
-- 第二个项目使用 Git dependency 接入。
-- 标记 `0.1.0`，再评估拆仓和 crates.io 发布。
+- 独立 GitHub 仓库配置 Windows/macOS/Linux CI。
+- Aegis workspace 改为固定 Git revision 依赖，不再包含本地 crate member。
+- 建立 `v0.1.0` tag；crates.io、MSRV 和 license 后续单独决定。
 
 ## 13. 验收标准
 
 - 行为基线测试保持通过。
 - 公共 crate 无 `aegis-*`、Tauri、Tokio 依赖。
-- `cargo test -p steam-local-kit` 独立通过。
+- 独立仓库 `cargo test --all-targets` 通过。
 - `aegis-live` 和 `aegis-desktop` 原有公共契约不变。
 - 多用户仍 fail-closed。
 - 对 fixture 的非目标字节保持一致。
 - 写入错误和诊断不泄露 VDF 内容。
 - 发布前，Windows、macOS、Linux 至少完成 compile/test CI；Windows 原子替换需要目标平台运行测试。
 
-Phase A–D 及 review hardening 的本地验收结果记录在[行为基线第 10 节](./steam-local-kit-behavior-baseline.md#10-phase-ad-抽取及-review-hardening-后证据)：公共包 41 项、全 workspace 438 项测试通过，Windows/x86_64 Linux/aarch64 Linux target check 通过；Windows 运行测试保留为 Phase E 门禁。
+Phase A–E 及 review hardening 的本地验收结果记录在[行为基线第 10 节](./steam-local-kit-behavior-baseline.md#10-phase-ae-抽取发布及-review-hardening-后证据)：公共包 41 项、全 workspace 438 项测试通过，Windows/x86_64 Linux/aarch64 Linux target check 通过。
 
 ## 14. 暂不阻塞实施的开放项
 
-- 最终 crate/repository 名称是否保留 `steam-local-kit`。
 - `serde` 是否进入 `0.1` feature。
-- 发布前的 MSRV 和 license。
+- crates.io 发布前的 MSRV 和 license。
 - 是否在 `0.2` 提供通用的 Steam 进程探测实现。
 
-这些项目不影响当前仓库内 package 的复用，也不阻塞其他项目先通过 path/Git dependency 接入；它们在独立发布前确定。
+这些项目不影响当前 Git dependency 的复用；它们在 crates.io 发布前确定。

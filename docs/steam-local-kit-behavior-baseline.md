@@ -102,16 +102,17 @@ cargo test -p aegis-live --lib gsi::tests -- --nocapture
 - Live GSI/Steam discovery：6 passed。
 - 覆盖精确 token、幂等判定、跨 App 定点修改、Unicode/引号/反斜杠、备份原子替换、附加库顺序、Windows 路径和显式 GSI 路径优先级。
 
-## 10. Phase A–D 抽取及 review hardening 后证据
+## 10. Phase A–E 抽取、发布及 review hardening 后证据
 
-同日完成公共包与调用方迁移后：
+完成公共包、调用方迁移和独立 GitHub 仓库后：
 
-- `cargo test -p steam-local-kit`：41 passed，覆盖发现、canonical 路径别名去重、用户证据、只读访问、lossless edit plan、VDF 控制字符转义、脱敏 `Debug`、opaque plan、协作事务锁、stale plan、备份冲突、恢复保护备份、非法路径、敏感内容不回显和写入前权限收紧。
+- 独立仓库 `/Volumes/lcp/hovel/steam-local-kit` 的 `cargo test --all-targets`：41 passed，覆盖发现、canonical 路径别名去重、用户证据、只读访问、lossless edit plan、VDF 控制字符转义、脱敏 `Debug`、opaque plan、协作事务锁、stale plan、备份冲突、恢复保护备份、非法路径、敏感内容不回显和写入前权限收紧。
 - Desktop Steam 行为基线：9 passed。
 - Live GSI/Steam discovery 行为基线：6 passed。
 - `cargo test --workspace`：438 passed、0 failed。
-- `cargo clippy -p steam-local-kit --all-targets -- -D warnings`：通过。
-- `x86_64-pc-windows-gnu`、`x86_64-unknown-linux-gnu` 与 `aarch64-unknown-linux-gnu`：`cargo check -p steam-local-kit` 通过；macOS 本机执行全部公共包测试。
+- 独立仓库 `cargo clippy --all-targets -- -D warnings`：通过。
+- `x86_64-pc-windows-gnu`、`x86_64-unknown-linux-gnu` 与 `aarch64-unknown-linux-gnu`：独立包 target check 通过；macOS 本机执行全部公共包测试。
+- GitHub 仓库：`https://github.com/LcpMarvel/steam-local-kit`，初始 tag `v0.1.0`。
 - 真实只读 smoke：`aegis setup detect` 仍选择 `/Volumes/lcp/SteamLibrary` 下现有 Dota 2 `gamestate_integration` 目录。
 
-Windows `ReplaceFileW` 路径已完成目标编译；Windows 机器上的原子替换运行测试仍属于 RFC Phase E 发布门禁。
+Windows `ReplaceFileW` 路径已完成目标编译；独立仓库 CI 在 Windows runner 执行运行测试。
