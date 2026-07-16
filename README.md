@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/LcpMarvel/steam-local-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/LcpMarvel/steam-local-kit/actions/workflows/ci.yml)
 
+English | [简体中文](README.zh-CN.md)
+
 Product-neutral Rust primitives for discovering Steam installations, resolving
 local users, inspecting per-app launch options, and safely editing
 `localconfig.vdf`.
