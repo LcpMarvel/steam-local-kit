@@ -2,7 +2,10 @@ use std::{
     error::Error,
     fmt, io,
     path::{Path, PathBuf},
+    time::Duration,
 };
+
+use crate::AppId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IoOperation {
@@ -13,6 +16,7 @@ pub enum IoOperation {
     WriteTemporary,
     Replace,
     Verify,
+    Launch,
 }
 
 #[derive(Debug)]
@@ -58,6 +62,21 @@ pub enum SteamError {
     WriteVerificationFailed {
         path: PathBuf,
         recovery_path: PathBuf,
+    },
+    /// An app manifest names another app than the one asked for.
+    AppMismatch {
+        path: PathBuf,
+        expected: AppId,
+    },
+    /// An app manifest's `installdir` is not one plain directory name.
+    UnsafeInstallDir {
+        path: PathBuf,
+    },
+    /// The process list could not be read, so nothing is known to be stopped.
+    ProcessProbeFailed,
+    /// Steam was asked to exit and was still running after `waited`.
+    SteamStillRunning {
+        waited: Duration,
     },
 }
 
@@ -147,8 +166,13 @@ impl SteamError {
             | Self::UnsafeBackup { path }
             | Self::BackupChanged { path, .. }
             | Self::BackupVerificationFailed { path }
-            | Self::WriteVerificationFailed { path, .. } => Some(path),
-            Self::InvalidEdit { .. } | Self::InvalidPolicy { .. } => None,
+            | Self::WriteVerificationFailed { path, .. }
+            | Self::AppMismatch { path, .. }
+            | Self::UnsafeInstallDir { path } => Some(path),
+            Self::InvalidEdit { .. }
+            | Self::InvalidPolicy { .. }
+            | Self::ProcessProbeFailed
+            | Self::SteamStillRunning { .. } => None,
         }
     }
 
@@ -211,6 +235,23 @@ impl fmt::Display for SteamError {
                 "Steam write verification failed at {}",
                 path.display()
             ),
+            Self::AppMismatch { path, expected } => write!(
+                formatter,
+                "Steam app manifest at {} is not for app {}",
+                path.display(),
+                expected.get()
+            ),
+            Self::UnsafeInstallDir { path } => write!(
+                formatter,
+                "Steam app manifest at {} names an unsafe installdir",
+                path.display()
+            ),
+            Self::ProcessProbeFailed => write!(formatter, "could not read the process list"),
+            Self::SteamStillRunning { waited } => write!(
+                formatter,
+                "Steam was still running {}s after it was asked to exit",
+                waited.as_secs()
+            ),
         }
     }
 }
@@ -241,7 +282,11 @@ impl Error for SteamError {
             | Self::UnsafeBackup { .. }
             | Self::BackupChanged { .. }
             | Self::BackupVerificationFailed { .. }
-            | Self::WriteVerificationFailed { .. } => None,
+            | Self::WriteVerificationFailed { .. }
+            | Self::AppMismatch { .. }
+            | Self::UnsafeInstallDir { .. }
+            | Self::ProcessProbeFailed
+            | Self::SteamStillRunning { .. } => None,
         }
     }
 }

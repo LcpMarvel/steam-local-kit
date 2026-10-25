@@ -14,7 +14,7 @@ The crate is currently distributed from GitHub:
 
 ```toml
 [dependencies]
-steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.1.0" }
+steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.2.0" }
 ```
 
 The Cargo package name is `steam-local-kit`; Rust code imports it as
@@ -27,8 +27,15 @@ The Cargo package name is `steam-local-kit`; Rust code imports it as
 - Discover `userdata` candidates and use `loginusers.vdf` as user-selection
   evidence.
 - Represent missing, unique, and ambiguous user resolution explicitly.
-- Read `LaunchOptions` for any caller-provided Steam App ID.
-- Plan conservative `EnsureToken` and `RemoveToken` edits without writing.
+- Find an app's install in a library from its `appmanifest_<id>.acf`, refusing
+  an `installdir` that is not one plain directory name.
+- Read `LaunchOptions` for any caller-provided Steam App ID; a user who never
+  ran the app reads as having none.
+- Plan conservative `EnsureToken` and `RemoveToken` edits without writing;
+  `EnsureToken` creates the app's node when the user does not have it yet.
+- Tell whether Steam (or any named process) is running, ask Steam to exit the
+  way its own menu does, wait for it to be gone, and start it again. Nothing
+  kills a process, and a probe that cannot tell never reads as stopped.
 - Apply edits with stale-source detection, verified backups, cooperative
   per-target locking, permission preservation, and same-directory atomic
   replacement.

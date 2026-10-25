@@ -1,6 +1,6 @@
 [package]
 name = "steam-local-kit"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 readme = "README.md"
 description = "Product-neutral Rust primitives for discovering, inspecting, and safely editing local Steam configuration"

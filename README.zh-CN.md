@@ -13,7 +13,7 @@
 
 ```toml
 [dependencies]
-steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.1.0" }
+steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.2.0" }
 ```
 
 Cargo 包名是 `steam-local-kit`，在 Rust 代码中通过 `steam_local_kit`
@@ -25,11 +25,17 @@ Cargo 包名是 `steam-local-kit`，在 Rust 代码中通过 `steam_local_kit`
 - 从 `libraryfolders.vdf` 解析额外的 Steam 库目录。
 - 发现 `userdata` 用户候选，并使用 `loginusers.vdf` 作为用户选择证据。
 - 显式表达用户缺失、唯一和存在歧义三种解析结果。
-- 根据调用方传入的任意 Steam App ID 读取 `LaunchOptions`。
-- 在不写入文件的前提下，规划保守的 `EnsureToken` 和 `RemoveToken`
+- 通过库目录里的 `appmanifest_<id>.acf` 找到应用的安装目录；`installdir`
+  不是单个普通目录名时拒绝。
+- 根据调用方传入的任意 Steam App ID 读取 `LaunchOptions`；从未运行过该应用的
+  用户视为没有启动项。
+- 在不写入文件的前提下（用户还没有该应用节点时，`EnsureToken` 会创建它），规划保守的 `EnsureToken` 和 `RemoveToken`
   修改。
 - 应用修改时提供源文件变化检测、备份校验、按目标协作锁、权限保留和
   同目录原子替换。
+- 判断 Steam（或调用方指定的进程）是否在运行，像 Steam 自己的菜单那样请求
+  它退出、等待它完全退出，并重新启动它。不会强杀任何进程；无法判断时绝不
+  视为已退出。
 - 校验并恢复符合条件的备份，同时为恢复前的当前文件保留保护备份。
 - 返回类型化错误和诊断信息，`Debug` 输出不会包含 VDF 正文或启动项
   原值。
