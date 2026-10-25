@@ -8,6 +8,7 @@
 
 #![deny(unsafe_code)]
 
+mod active_user;
 mod app_manifest;
 mod discovery;
 mod error;
@@ -17,6 +18,9 @@ mod process;
 mod transaction;
 mod users;
 
+pub use active_user::active_account_id;
+#[cfg(not(windows))]
+pub use active_user::active_account_id_in;
 pub use app_manifest::{find_app_install, AppInstall};
 pub use discovery::{additional_library_roots, platform_default_roots, LibraryRoot, LibrarySource};
 pub use error::{IoOperation, SteamError};

@@ -26,6 +26,7 @@ The Cargo package name is `steam-local-kit`; Rust code imports it as
 - Parse additional library roots from `libraryfolders.vdf`.
 - Discover `userdata` candidates and use `loginusers.vdf` as user-selection
   evidence.
+- Read which account is signed in to the running Steam client.
 - Report each user's Steam display name (`PersonaName`) for telling accounts
   apart, never the login account name.
 - Represent missing, unique, and ambiguous user resolution explicitly.

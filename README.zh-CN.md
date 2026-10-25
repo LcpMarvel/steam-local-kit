@@ -24,6 +24,7 @@ Cargo 包名是 `steam-local-kit`，在 Rust 代码中通过 `steam_local_kit`
 - 发现 Windows、macOS 和 Linux 上的 Steam 默认根目录。
 - 从 `libraryfolders.vdf` 解析额外的 Steam 库目录。
 - 发现 `userdata` 用户候选，并使用 `loginusers.vdf` 作为用户选择证据。
+- 读取当前在 Steam 里登录的账号。
 - 给出每个用户在 Steam 里显示的昵称（`PersonaName`），用于区分账号；不读取登录账号名。
 - 显式表达用户缺失、唯一和存在歧义三种解析结果。
 - 通过库目录里的 `appmanifest_<id>.acf` 找到应用的安装目录；`installdir`

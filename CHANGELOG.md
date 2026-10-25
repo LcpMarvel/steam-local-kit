@@ -2,6 +2,9 @@
 
 ## 0.3.0
 
+- `active_account_id`: the account signed in to Steam right now
+  (`ActiveProcess\\ActiveUser`, from the Windows registry or `registry.vdf`),
+  `None` while nobody is. Read it only while Steam runs.
 - `SteamUserCandidate::persona_name`: the name Steam shows for the account,
   from `PersonaName` in `loginusers.vdf`, without control characters and cut
   to `PERSONA_NAME_MAX_CHARS` (32). Adding the field breaks code that builds
