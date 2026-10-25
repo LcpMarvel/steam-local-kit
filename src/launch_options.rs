@@ -15,6 +15,9 @@ pub enum LaunchOptionsEdit<'token> {
 pub enum ChangeKind {
     InsertLaunchOptions,
     ReplaceLaunchOptions,
+    /// The app (or an ancestor such as `apps`) had no node; it was created
+    /// holding only `LaunchOptions`.
+    InsertAppNode,
 }
 
 /// A content fingerprint used to reject plans made from stale source bytes.
@@ -122,6 +125,9 @@ impl<'source> LocalConfigDocument<'source> {
 
         let located = locate_launch_options(self.source, app_id)?;
         let (replacement, change) = match edit {
+            LaunchOptionsEdit::EnsureToken(token) if located.missing_depth.is_some() => {
+                insert_app_node(self.source, app_id, &located, token)?
+            }
             LaunchOptionsEdit::EnsureToken(token) => match located.value {
                 Some(span) => {
                     let current = span
@@ -135,7 +141,7 @@ impl<'source> LocalConfigDocument<'source> {
                     };
                     replace_quoted_value(self.source, app_id, span, &next)
                 }
-                None => insert_launch_options(self.source, app_id, located, token)?,
+                None => insert_launch_options(self.source, app_id, &located, token)?,
             },
             LaunchOptionsEdit::RemoveToken(token) => {
                 let span = located
@@ -265,11 +271,26 @@ fn tokens(source: &str) -> Result<Vec<SpanToken>, SteamError> {
     Ok(tokens)
 }
 
+const APP_PATH_DEPTH: usize = 6;
+
 #[derive(Clone, Debug)]
 struct LocatedLaunchOptions {
-    app_open: usize,
-    app_close: usize,
+    /// Brace positions of each object on `UserLocalConfigStore/Software/
+    /// Valve/Steam/apps/<app>`, as far as the document has them.
+    opens: [Option<usize>; APP_PATH_DEPTH],
+    closes: [Option<usize>; APP_PATH_DEPTH],
     value: Option<SpanToken>,
+    /// The first level the document lacks; `None` when the app node exists.
+    missing_depth: Option<usize>,
+}
+
+impl LocatedLaunchOptions {
+    fn object(&self, depth: usize) -> Result<(usize, usize), SteamError> {
+        match (self.opens[depth], self.closes[depth]) {
+            (Some(open), Some(close)) if open < close => Ok((open, close)),
+            _ => Err(SteamError::invalid_edit("invalid_app_object_range")),
+        }
+    }
 }
 
 fn locate_launch_options(source: &str, app_id: AppId) -> Result<LocatedLaunchOptions, SteamError> {
@@ -285,9 +306,19 @@ fn locate_launch_options(source: &str, app_id: AppId) -> Result<LocatedLaunchOpt
     ];
     let mut stack = Vec::<String>::new();
     let mut pending = None::<String>;
-    let mut app_open = None;
-    let mut app_close = None;
+    let mut opens = [None; APP_PATH_DEPTH];
+    let mut closes = [None; APP_PATH_DEPTH];
     let mut launch_value = None;
+    // The depth at which `stack` is a prefix of `path`, if it is one.
+    let on_path = |stack: &[String]| {
+        (!stack.is_empty()
+            && stack.len() <= APP_PATH_DEPTH
+            && stack
+                .iter()
+                .map(String::as_str)
+                .eq(path[..stack.len()].iter().copied()))
+        .then(|| stack.len() - 1)
+    };
 
     for token in tokens {
         if let Some(value) = &token.value {
@@ -309,24 +340,31 @@ fn locate_launch_options(source: &str, app_id: AppId) -> Result<LocatedLaunchOpt
                 .take()
                 .ok_or_else(|| SteamError::invalid_edit("vdf_object_key_missing"))?;
             stack.push(key);
-            if stack.iter().map(String::as_str).eq(path) && app_open.replace(token.start).is_some()
-            {
-                return Err(SteamError::invalid_edit("ambiguous_app_location"));
+            if let Some(depth) = on_path(&stack) {
+                if opens[depth].replace(token.start).is_some() {
+                    return Err(SteamError::invalid_edit("ambiguous_app_location"));
+                }
             }
         } else {
-            if stack.iter().map(String::as_str).eq(path) && app_close.replace(token.start).is_some()
-            {
-                return Err(SteamError::invalid_edit("ambiguous_app_location"));
+            if let Some(depth) = on_path(&stack) {
+                if closes[depth].replace(token.start).is_some() {
+                    return Err(SteamError::invalid_edit("ambiguous_app_location"));
+                }
             }
             stack.pop();
             pending = None;
         }
     }
 
+    let missing_depth = (0..APP_PATH_DEPTH).find(|depth| opens[*depth].is_none());
+    if missing_depth == Some(0) {
+        return Err(SteamError::invalid_edit("app_location_missing"));
+    }
     Ok(LocatedLaunchOptions {
-        app_open: app_open.ok_or_else(|| SteamError::invalid_edit("app_location_missing"))?,
-        app_close: app_close.ok_or_else(|| SteamError::invalid_edit("app_location_missing"))?,
+        opens,
+        closes,
         value: launch_value,
+        missing_depth,
     })
 }
 
@@ -353,32 +391,84 @@ fn replace_quoted_value(
 fn insert_launch_options(
     source: &str,
     app_id: AppId,
-    located: LocatedLaunchOptions,
+    located: &LocatedLaunchOptions,
     token: &str,
 ) -> Result<(String, Change), SteamError> {
-    if located.app_open >= located.app_close {
-        return Err(SteamError::invalid_edit("invalid_app_object_range"));
-    }
-    let line_start = source[..located.app_close]
-        .rfind('\n')
-        .map_or(0, |position| position + 1);
-    let indent = &source[line_start..located.app_close];
-    if !indent.chars().all(char::is_whitespace) {
-        return Err(SteamError::invalid_edit("unsafe_app_closing_indentation"));
-    }
+    let (_, app_close) = located.object(APP_PATH_DEPTH - 1)?;
+    let (line_start, indent) = closing_line(source, app_close)?;
     let insertion = format!("{indent}\t\"LaunchOptions\"\t\t\"{}\"\n", escape(token));
     let replacement = format!(
         "{}{}{}",
-        &source[..located.app_close],
+        &source[..line_start],
         insertion,
-        &source[located.app_close..]
+        &source[line_start..]
     );
     let change = Change {
         app_id,
         kind: ChangeKind::InsertLaunchOptions,
-        byte_range: located.app_close..located.app_close,
+        byte_range: line_start..line_start,
     };
     Ok((replacement, change))
+}
+
+/// Creates the missing levels down to the app node, inside the deepest
+/// object the document has, holding only `LaunchOptions`.
+fn insert_app_node(
+    source: &str,
+    app_id: AppId,
+    located: &LocatedLaunchOptions,
+    token: &str,
+) -> Result<(String, Change), SteamError> {
+    let missing = located
+        .missing_depth
+        .ok_or_else(|| SteamError::invalid_edit("app_location_present"))?;
+    let (_, parent_close) = located.object(missing - 1)?;
+    let (line_start, indent) = closing_line(source, parent_close)?;
+    let app_id_key = app_id.get().to_string();
+    let keys = ["Software", "Valve", "Steam", "apps", app_id_key.as_str()];
+    // `keys[i]` is the node at depth `i + 1`.
+    let missing_keys = &keys[missing - 1..];
+
+    let mut insertion = String::new();
+    for (level, key) in missing_keys.iter().enumerate() {
+        let tabs = "\t".repeat(level + 1);
+        insertion.push_str(&format!("{indent}{tabs}\"{key}\"\n{indent}{tabs}{{\n"));
+    }
+    let inner = "\t".repeat(missing_keys.len() + 1);
+    insertion.push_str(&format!(
+        "{indent}{inner}\"LaunchOptions\"\t\t\"{}\"\n",
+        escape(token)
+    ));
+    for level in (0..missing_keys.len()).rev() {
+        let tabs = "\t".repeat(level + 1);
+        insertion.push_str(&format!("{indent}{tabs}}}\n"));
+    }
+
+    let replacement = format!(
+        "{}{}{}",
+        &source[..line_start],
+        insertion,
+        &source[line_start..]
+    );
+    let change = Change {
+        app_id,
+        kind: ChangeKind::InsertAppNode,
+        byte_range: line_start..line_start,
+    };
+    Ok((replacement, change))
+}
+
+/// Where the line of a closing brace starts, and its indentation; the brace
+/// must be the first thing on its line. New lines go in at that line start.
+fn closing_line(source: &str, close: usize) -> Result<(usize, &str), SteamError> {
+    let line_start = source[..close]
+        .rfind('\n')
+        .map_or(0, |position| position + 1);
+    let indent = &source[line_start..close];
+    if !indent.chars().all(char::is_whitespace) {
+        return Err(SteamError::invalid_edit("unsafe_app_closing_indentation"));
+    }
+    Ok((line_start, indent))
 }
 
 fn escape(value: &str) -> String {
@@ -440,7 +530,9 @@ mod tests {
         assert!(plan.changed());
         assert_eq!(plan.changes().len(), 1);
         assert_eq!(plan.changes()[0].kind, ChangeKind::InsertLaunchOptions);
-        assert!(replacement.contains("\"LaunchOptions\"\t\t\"-gamestateintegration\""));
+        assert!(replacement.contains(
+            "\t\t\t\t\t\t\"LastPlayed\" \"1\"\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-gamestateintegration\"\n\t\t\t\t\t}"
+        ));
         assert!(replacement
             .contains("\"730\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\" \"-console\""));
     }
@@ -591,5 +683,79 @@ mod tests {
         assert!(!debug.contains("do-not-log"));
         assert!(!debug.contains("replacement:"));
         assert!(debug.contains("replacement_len"));
+    }
+
+    fn ensure_then_read(source: &str) -> (EditPlan, String) {
+        let document = LocalConfigDocument::parse(source).unwrap();
+        let plan = document
+            .plan_launch_options_edit(
+                AppId::new(570),
+                LaunchOptionsEdit::EnsureToken("-gamestateintegration"),
+            )
+            .unwrap();
+        let replacement = String::from_utf8(plan.replacement().to_vec()).unwrap();
+        (plan, replacement)
+    }
+
+    fn assert_round_trips(replacement: &str) {
+        let document = LocalConfigDocument::parse(replacement).unwrap();
+        assert_eq!(
+            document.launch_options(AppId::new(570)).unwrap(),
+            Some("-gamestateintegration")
+        );
+        let again = document
+            .plan_launch_options_edit(
+                AppId::new(570),
+                LaunchOptionsEdit::EnsureToken("-gamestateintegration"),
+            )
+            .unwrap();
+        assert!(!again.changed());
+    }
+
+    #[test]
+    fn ensure_creates_the_app_node_a_new_user_does_not_have() {
+        let source = SAMPLE.replace(
+            "\t\t\t\t\t\"570\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\" \"1\"\n\t\t\t\t\t}\n",
+            "",
+        );
+        assert!(!source.contains("\"570\""));
+
+        let (plan, replacement) = ensure_then_read(&source);
+
+        assert_eq!(plan.changes()[0].kind, ChangeKind::InsertAppNode);
+        assert!(replacement.contains(
+            "\t\t\t\t\t\"570\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-gamestateintegration\"\n\t\t\t\t\t}\n\t\t\t\t}"
+        ));
+        assert!(replacement.contains("\"LaunchOptions\" \"-console\""));
+        assert_round_trips(&replacement);
+    }
+
+    #[test]
+    fn ensure_creates_apps_and_the_app_node_when_steam_has_neither() {
+        let source = "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"SurveyDate\" \"2026-10-25\"\n\t\t\t}\n\t\t}\n\t}\n}\n";
+
+        let (plan, replacement) = ensure_then_read(source);
+
+        assert_eq!(plan.changes()[0].kind, ChangeKind::InsertAppNode);
+        assert!(replacement.contains("\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"570\"\n"));
+        assert!(replacement.contains("\"SurveyDate\" \"2026-10-25\""));
+        assert_round_trips(&replacement);
+    }
+
+    #[test]
+    fn remove_on_a_missing_app_node_changes_nothing() {
+        let document = LocalConfigDocument::parse(
+            "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t}\n}\n",
+        )
+        .unwrap();
+
+        let plan = document
+            .plan_launch_options_edit(
+                AppId::new(570),
+                LaunchOptionsEdit::RemoveToken("-gamestateintegration"),
+            )
+            .unwrap();
+
+        assert!(!plan.changed());
     }
 }

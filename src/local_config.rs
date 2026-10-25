@@ -53,11 +53,15 @@ impl<'source> LocalConfigDocument<'source> {
                 SteamError::missing_node(self.path.clone(), "UserLocalConfigStore")
             })?;
         let app_id = app_id.get().to_string();
-        let app = unique_object(
+        // A user who never ran the app has no node for it (or no `apps` yet).
+        let Some(app) = unique_object(
             root,
             &["Software", "Valve", "Steam", "apps", app_id.as_str()],
             self.path.as_ref(),
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         let Some(values) = app.get("LaunchOptions") else {
             return Ok(None);
         };
@@ -84,18 +88,19 @@ pub fn read_launch_options(path: &Path, app_id: AppId) -> Result<Option<String>,
         .map(|value| value.map(str::to_owned))
 }
 
+/// The object at `keys`, or `None` when a node on the way is absent.
 fn unique_object<'value>(
     mut object: &'value Obj<'value>,
     keys: &[&str],
     source_path: Option<&PathBuf>,
-) -> Result<&'value Obj<'value>, SteamError> {
+) -> Result<Option<&'value Obj<'value>>, SteamError> {
     let mut traversed = Vec::new();
     for key in keys {
         traversed.push(*key);
         let node = traversed.join("/");
-        let values = object
-            .get(*key)
-            .ok_or_else(|| SteamError::missing_node(source_path.cloned(), node.clone()))?;
+        let Some(values) = object.get(*key) else {
+            return Ok(None);
+        };
         let [value] = values.as_slice() else {
             return Err(SteamError::ambiguous_node(source_path.cloned(), node));
         };
@@ -103,7 +108,7 @@ fn unique_object<'value>(
             SteamError::invalid_vdf_at(source_path.cloned(), format!("{node} is not an object"))
         })?;
     }
-    Ok(object)
+    Ok(Some(object))
 }
 
 #[cfg(test)]
@@ -136,15 +141,17 @@ mod tests {
     }
 
     #[test]
-    fn missing_launch_options_is_none_but_missing_app_is_typed() {
+    fn missing_launch_options_or_app_node_reads_as_none() {
         let source = SAMPLE.replace("\"LaunchOptions\" \"-console\"", "\"LastPlayed\" \"1\"");
         let document = LocalConfigDocument::parse(&source).unwrap();
 
         assert_eq!(document.launch_options(AppId::new(730)).unwrap(), None);
-        assert!(matches!(
-            document.launch_options(AppId::new(999)).unwrap_err(),
-            SteamError::MissingNode { node, .. } if node.ends_with("/999")
-        ));
+        assert_eq!(document.launch_options(AppId::new(999)).unwrap(), None);
+        let no_apps = LocalConfigDocument::parse(
+            "\"UserLocalConfigStore\" { \"Software\" { \"Valve\" { \"Steam\" { } } } }",
+        )
+        .unwrap();
+        assert_eq!(no_apps.launch_options(AppId::new(570)).unwrap(), None);
     }
 
     #[test]
