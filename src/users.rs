@@ -39,7 +39,15 @@ pub struct SteamUserCandidate {
     pub local_config_path: PathBuf,
     pub most_recent: bool,
     pub evidence: Vec<UserEvidence>,
+    /// The name Steam shows for the account (`PersonaName` in
+    /// `loginusers.vdf`), for telling accounts apart. Control characters are
+    /// dropped and it is cut to [`PERSONA_NAME_MAX_CHARS`]; `None` for an
+    /// account Steam has no login record for, or a blank name.
+    pub persona_name: Option<String>,
 }
+
+/// The longest `persona_name` kept, in characters. Steam caps names at 32.
+pub const PERSONA_NAME_MAX_CHARS: usize = 32;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UserDiscovery {
@@ -125,6 +133,7 @@ impl UserResolver {
                         local_config_path,
                         most_recent,
                         evidence,
+                        persona_name: login.and_then(|record| record.persona_name.clone()),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -164,10 +173,11 @@ impl UserResolver {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct LoginUserRecord {
     steam_id64: u64,
     most_recent: bool,
+    persona_name: Option<String>,
 }
 
 fn login_users(
@@ -214,20 +224,33 @@ fn login_users(
             let account_id = steam_id64.checked_sub(STEAM_ID64_ACCOUNT_BASE)?;
             let account_id = u32::try_from(account_id).ok()?;
             let user = values.first()?.get_obj()?;
-            let most_recent = user
-                .get("MostRecent")
-                .and_then(|values| values.first())
-                .and_then(|value| value.get_str())
-                == Some("1");
+            let field = |key: &str| {
+                user.get(key)
+                    .and_then(|values| values.first())
+                    .and_then(|value| value.get_str())
+            };
+            let most_recent = field("MostRecent") == Some("1");
+            let persona_name = field("PersonaName").and_then(clean_persona_name);
             Some((
                 account_id,
                 LoginUserRecord {
                     steam_id64,
                     most_recent,
+                    persona_name,
                 },
             ))
         })
         .collect()
+}
+
+fn clean_persona_name(raw: &str) -> Option<String> {
+    let name = raw
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(PERSONA_NAME_MAX_CHARS)
+        .collect::<String>();
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 #[cfg(test)]
@@ -286,8 +309,32 @@ mod tests {
                 local_config_path: path,
                 most_recent: false,
                 evidence: vec![UserEvidence::LocalConfig],
+                persona_name: None,
             })
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn persona_names_come_from_loginusers_cleaned() {
+        let root = temp_root("persona");
+        add_user(&root, 41);
+        add_user(&root, 42);
+        add_user(&root, 43);
+        write_login_users(
+            &root,
+            "\"76561197960265769\" { \"PersonaName\" \"  Night\\tOwl  \" } \
+             \"76561197960265770\" { \"PersonaName\" \"   \" }",
+        );
+
+        let discovery = UserResolver::discover([&root]);
+        let names = discovery
+            .candidates
+            .iter()
+            .map(|candidate| candidate.persona_name.as_deref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec![Some("NightOwl"), None, None]);
         fs::remove_dir_all(root).unwrap();
     }
 

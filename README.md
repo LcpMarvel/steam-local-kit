@@ -14,7 +14,7 @@ The crate is currently distributed from GitHub:
 
 ```toml
 [dependencies]
-steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.2.0" }
+steam-local-kit = { git = "https://github.com/LcpMarvel/steam-local-kit.git", tag = "v0.3.0" }
 ```
 
 The Cargo package name is `steam-local-kit`; Rust code imports it as
@@ -26,6 +26,8 @@ The Cargo package name is `steam-local-kit`; Rust code imports it as
 - Parse additional library roots from `libraryfolders.vdf`.
 - Discover `userdata` candidates and use `loginusers.vdf` as user-selection
   evidence.
+- Report each user's Steam display name (`PersonaName`) for telling accounts
+  apart, never the login account name.
 - Represent missing, unique, and ambiguous user resolution explicitly.
 - Find an app's install in a library from its `appmanifest_<id>.acf`, refusing
   an `installdir` that is not one plain directory name.

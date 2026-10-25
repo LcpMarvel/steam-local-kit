@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- `SteamUserCandidate::persona_name`: the name Steam shows for the account,
+  from `PersonaName` in `loginusers.vdf`, without control characters and cut
+  to `PERSONA_NAME_MAX_CHARS` (32). Adding the field breaks code that builds
+  `SteamUserCandidate` literally.
+
 ## 0.2.0
 
 - `find_app_install` reads an app's `appmanifest_<id>.acf` in a library and
